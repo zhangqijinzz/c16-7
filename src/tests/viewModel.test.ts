@@ -49,4 +49,46 @@ describe('FrameSenseViewModel', () => {
     expect(vm.getSnapshot().document.image).not.toBeNull();
     expect(vm.getSnapshot().error).toContain('本地保存失败');
   });
+
+  it('preserves a locked ratio through resize, saved variant, and variant switching', () => {
+    vm.loadDemo(); // 1200×800, imageRatio = 1.5
+    vm.setRatio('1:1');
+    vm.resizeCrop(0.6, 0.6);
+    const crop = vm.getSnapshot().document.crop;
+    // 1:1 在 1200×800 图上：height = width * 1.5 = 0.9
+    expect(crop.height).toBeCloseTo(0.9);
+    expect((crop.width * 1.5) / crop.height).toBeCloseTo(1);
+
+    vm.saveVariant();
+    const saved = repository.document.variants[0];
+    expect(saved.ratio).toBe('1:1');
+    expect((saved.width * 1.5) / saved.height).toBeCloseTo(1);
+
+    vm.resizeCrop(0.3, 0.3);
+    vm.selectVariant(saved.id);
+    const restored = vm.getSnapshot().document.crop;
+    expect(restored.width).toBeCloseTo(saved.width);
+    expect((restored.width * 1.5) / restored.height).toBeCloseTo(1);
+  });
+
+  it('repairs distorted legacy crops when reopening a saved document', () => {
+    // 旧版本漏算图片比例时可能存下的走样数据：标注 16:9 但实际像素比例约 2.67:1
+    repository.document = {
+      ...structuredClone(repository.document),
+      image: { src: 'data:image/svg+xml,test', width: 1200, height: 800, name: 'test.svg' },
+      crop: { id: 'current', x: 0.1, y: 0.1, width: 0.8, height: 0.45, ratio: '16:9' },
+      variants: [
+        { id: 'variant-old', x: 0, y: 0, width: 0.5, height: 0.28125, ratio: '16:9' },
+      ],
+    };
+    void vm.initialize();
+    const crop = vm.getSnapshot().document.crop;
+    expect(crop.width).toBeCloseTo(0.8);
+    // 修正后高度 = 0.8 * 1.5 / (16/9) = 0.675
+    expect(crop.height).toBeCloseTo(0.675);
+    expect((crop.width * 1.5) / crop.height).toBeCloseTo(16 / 9);
+    const variant = vm.getSnapshot().document.variants[0];
+    expect(variant.height).toBeCloseTo(0.5 * 1.5 / (16 / 9));
+    expect((variant.width * 1.5) / variant.height).toBeCloseTo(16 / 9);
+  });
 });

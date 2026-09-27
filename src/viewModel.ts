@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { cropForRatio, makeVariant, moveCrop, resizeCrop } from './domain';
+import { cropForRatio, makeVariant, moveCrop, normalizeCrop, resizeCrop } from './domain';
 import { EMPTY_DOCUMENT, type FrameDocument, type GuideKey, type Ratio, type ViewState } from './model';
 import type { FrameRepository } from './repository';
 import type { ImageService } from './service';
@@ -36,7 +36,18 @@ export class FrameSenseViewModel {
   async initialize(): Promise<void> {
     this.patch({ phase: 'loading', notice: '正在恢复上次工作状态…', error: null });
     try {
-      const document = this.repository.load();
+      const loaded = this.repository.load();
+      // 修正早期版本可能存下的走样裁切：按宽度和图片宽高比重算高度，保证重开后比例仍然成立。
+      const document = loaded.image
+        ? {
+            ...loaded,
+            crop: normalizeCrop(loaded.crop, loaded.image.width / loaded.image.height),
+            variants: loaded.variants.map((variant) => ({
+              ...normalizeCrop(variant, loaded.image!.width / loaded.image!.height),
+              id: variant.id,
+            })),
+          }
+        : loaded;
       this.patch({ document, phase: document.image ? 'editing' : 'ready', notice: document.image ? '已恢复上次工作状态' : '欢迎来到 FrameSense，先载入示例或导入图片。' });
     } catch {
       this.patch({ phase: 'error', notice: '未能读取历史状态，可继续新建工作。', error: '本地数据读取失败。' });
@@ -71,11 +82,15 @@ export class FrameSenseViewModel {
   }
 
   moveCrop(dx: number, dy: number): void {
-    this.persist({ ...this.state.document, crop: moveCrop(this.state.document.crop, dx, dy) }, '裁切位置已调整。');
+    const image = this.state.document.image;
+    if (!image) return;
+    this.persist({ ...this.state.document, crop: moveCrop(this.state.document.crop, dx, dy, image.width / image.height) }, '裁切位置已调整。');
   }
 
   resizeCrop(width: number, height: number): void {
-    this.persist({ ...this.state.document, crop: resizeCrop(this.state.document.crop, width, height) }, '裁切范围已调整。');
+    const image = this.state.document.image;
+    if (!image) return;
+    this.persist({ ...this.state.document, crop: resizeCrop(this.state.document.crop, width, height, image.width / image.height) }, '裁切范围已调整。');
   }
 
   markSubject(x: number, y: number): void {
@@ -83,16 +98,21 @@ export class FrameSenseViewModel {
   }
 
   saveVariant(): void {
+    const image = this.state.document.image;
+    if (!image) return;
     const id = `variant-${Date.now()}`;
-    const variant = makeVariant(this.state.document.crop, id);
+    const variant = makeVariant(this.state.document.crop, id, image.width / image.height);
     const document = { ...this.state.document, variants: [...this.state.document.variants, variant].slice(-8) };
     this.persist(document, `已保存裁切方案 ${document.variants.length}。`);
   }
 
   selectVariant(id: string): void {
+    const image = this.state.document.image;
+    if (!image) return;
     const variant = this.state.document.variants.find((item) => item.id === id);
     if (!variant) return;
-    this.persist({ ...this.state.document, crop: { ...variant, id: 'current' } }, '已切换到保存的裁切方案。');
+    const crop = { ...normalizeCrop(variant, image.width / image.height), id: 'current' };
+    this.persist({ ...this.state.document, crop }, '已切换到保存的裁切方案。');
   }
 
   toggleCompare(): void {
