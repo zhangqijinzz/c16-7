@@ -71,11 +71,15 @@ export class FrameSenseViewModel {
   }
 
   moveCrop(dx: number, dy: number): void {
-    this.persist({ ...this.state.document, crop: moveCrop(this.state.document.crop, dx, dy) }, '裁切位置已调整。');
+    const image = this.state.document.image;
+    if (!image) return;
+    this.persist({ ...this.state.document, crop: moveCrop(this.state.document.crop, dx, dy, image.width / image.height) }, '裁切位置已调整。');
   }
 
   resizeCrop(width: number, height: number): void {
-    this.persist({ ...this.state.document, crop: resizeCrop(this.state.document.crop, width, height) }, '裁切范围已调整。');
+    const image = this.state.document.image;
+    if (!image) return;
+    this.persist({ ...this.state.document, crop: resizeCrop(this.state.document.crop, width, height, image.width / image.height) }, '裁切范围已调整。');
   }
 
   markSubject(x: number, y: number): void {
@@ -83,8 +87,10 @@ export class FrameSenseViewModel {
   }
 
   saveVariant(): void {
+    const image = this.state.document.image;
+    if (!image) return;
     const id = `variant-${Date.now()}`;
-    const variant = makeVariant(this.state.document.crop, id);
+    const variant = makeVariant(this.state.document.crop, id, image.width / image.height);
     const document = { ...this.state.document, variants: [...this.state.document.variants, variant].slice(-8) };
     this.persist(document, `已保存裁切方案 ${document.variants.length}。`);
   }

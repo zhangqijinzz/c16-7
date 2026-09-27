@@ -49,4 +49,28 @@ describe('FrameSenseViewModel', () => {
     expect(vm.getSnapshot().document.image).not.toBeNull();
     expect(vm.getSnapshot().error).toContain('本地保存失败');
   });
+
+  it('keeps the locked ratio through resize, save, select, and reload', async () => {
+    // 示例图 1200×800，图片比例 1.5
+    vm.loadDemo();
+    vm.setRatio('16:9');
+    vm.resizeCrop(0.8, 0.8);
+    const resized = vm.getSnapshot().document.crop;
+    expect((resized.width * 1.5) / resized.height).toBeCloseTo(16 / 9);
+
+    vm.saveVariant();
+    const variantId = vm.getSnapshot().document.variants[0].id;
+    vm.setRatio('1:1');
+    vm.selectVariant(variantId);
+    const restored = vm.getSnapshot().document.crop;
+    expect(restored.ratio).toBe('16:9');
+    expect((restored.width * 1.5) / restored.height).toBeCloseTo(16 / 9);
+
+    // 重开页面：新 ViewModel 从同一份存储恢复，比例仍然成立
+    const reopened = new FrameSenseViewModel(repository, new FakeImageService());
+    await reopened.initialize();
+    const persisted = reopened.getSnapshot().document.crop;
+    expect(persisted.ratio).toBe('16:9');
+    expect((persisted.width * 1.5) / persisted.height).toBeCloseTo(16 / 9);
+  });
 });
